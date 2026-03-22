@@ -42,6 +42,23 @@ Tämä projekti ohjaa pölynimurin puhaltimen nopeutta ESP32-S3-mikrokontrolleri
 - **Logit**: `esphome logs huippuimuri.yaml --device COM3`
 - **Päivitys WiFi:n yli**: `esphome upload huippuimuri.yaml` (kun `ota:` on lisätty)
 
+## ECo125 FLOW -kytkentä
+
+Tämä ohje perustuu miltei ECo125 FLOW -malleihin (E6/BB). Puhaltimen ohjaus tapahtuu 0–10 V inputista ja takaa dokumentissa valkoisella 4-vaiheisella liittimellä.
+
+- Vihreä/keltainen (PE) maadoitus
+- Ruskea (L) 230 V vaihe
+- Sininen (N) 230 V nollajohdin
+- Keltainen (signaali) 0–10 V ohjaus signaali (joudutaan muuntamaan PWM:ksi ESP32:n kautta)
+- Valkoinen (tacho) pulssilähtö (kierrosnopeus)
+
+## GPIO-kytkentä ESP32-S3 kohdalla
+
+- `GPIO21` -> PWM-signaali (LEDC) FAN OUT (muunnin 0–10V) -> tuulettimen ohjaus
+- `GPIO47` -> Pulssilähtö (tach, 1 puoli kierros n. 2-7V) -> `pulse_counter` sensor
+
+Voit käyttää optoerotinta tai relettä 230 V/10 V erotteluun turvallisuuden vuoksi. Aina kytkentöjen yhteydessä katkaise verkkojännite ja varmista pätevä sähköjen ammattiosaaja.
+
 ## Konfiguraatio
 
 Katso `huippuimuri.yaml` tiedostosta yksityiskohdat. Lisää tarvittaessa `api:` ja `ota:` OTA-päivityksiä varten.
