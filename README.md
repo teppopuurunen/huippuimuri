@@ -16,6 +16,12 @@ Tämä projekti ohjaa pölynimurin puhaltimen nopeutta ESP32-S3-mikrokontrolleri
 - ESPHome (asennettu)
 - USB-kaapeli flashaukseen
 
+## Komponentit
+
+- **MCU:** ESP32-S3 DevKit
+- **Transistori:** BC547 (NPN)
+- **Vastus:** 1 kΩ (Base resistor)
+
 ## Asennus
 
 1. Kloonaa tämä repo:
@@ -58,6 +64,21 @@ Tämä ohje perustuu miltei ECo125 FLOW -malleihin (E6/BB). Puhaltimen ohjaus ta
 - `GPIO47` -> Pulssilähtö (tach, 1 puoli kierros n. 2-7V) -> `pulse_counter` sensor
 
 Voit käyttää optoerotinta tai relettä 230 V/10 V erotteluun turvallisuuden vuoksi. Aina kytkentöjen yhteydessä katkaise verkkojännite ja varmista pätevä sähköjen ammattiosaaja.
+
+## Tarkennettu kytkentäohje
+
+### 1. PWM-ohjaus (Nopeuden säätö)
+- **GPIO21** -> 1kΩ vastus -> BC547 Base (B)
+- **BC547 Collector (C)** -> Puhaltimen Keltainen (PWM input)
+- **BC547 Emitter (E)** -> GND
+
+*Huom: Kytkentä on invertoitu (Transistori ON = PWM 0V). YAML-konfiguraatiossa on `inverted: true`.*
+
+### 2. RPM-mittaus (Pyörintänopeus)
+- **GPIO47** -> Puhaltimen Valkoinen (Tacho)
+- Puhaltimen Sininen -> GND
+
+*Käytössä ESP32:n sisäinen INPUT_PULLUP.*
 
 ## Konfiguraatio
 
