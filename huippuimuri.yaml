@@ -9,6 +9,10 @@ esp32:
 logger:
   level: DEBUG
 
+api:
+
+ota:
+
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
