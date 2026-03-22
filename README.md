@@ -20,7 +20,8 @@ Tämä projekti ohjaa pölynimurin puhaltimen nopeutta ESP32-S3-mikrokontrolleri
 
 - **MCU:** ESP32-S3 DevKit
 - **Transistori:** BC547 (NPN)
-- **Vastus:** 1 kΩ (Base resistor)
+- **Vastus:** 1 kΩ (base-vastus)
+- **Vastus:** 1 kΩ - 10 kΩ (pull-up punaisen ja keltaisen väliin)
 
 ## Asennus
 
@@ -60,23 +61,27 @@ Tämä ohje perustuu miltei ECo125 FLOW -malleihin (E6/BB). Puhaltimen ohjaus ta
 
 ## GPIO-kytkentä ESP32-S3 kohdalla
 
-- `GPIO21` -> PWM-signaali (LEDC) FAN OUT (muunnin 0–10V) -> tuulettimen ohjaus
-- `GPIO47` -> Pulssilähtö (tach, 1 puoli kierros n. 2-7V) -> `pulse_counter` sensor
+- `GPIO21` -> Punainen ohjausjohto -> 1 kΩ sarjavastus -> Puhaltimen keltainen (PWM input)
+- `GPIO47` -> Puhaltimen valkoinen (tacho) -> `pulse_counter`-sensori
+- Puhaltimen sininen -> ESP32 GND
 
 Voit käyttää optoerotinta tai relettä 230 V/10 V erotteluun turvallisuuden vuoksi. Aina kytkentöjen yhteydessä katkaise verkkojännite ja varmista pätevä sähköjen ammattiosaaja.
 
 ## Tarkennettu kytkentäohje
 
+Tämä kytkentä mahdollistaa 3.3V ESP32-signaalin muuntamisen puhaltimen vaatimalle 0-10V tasolle.
+
 ### 1. PWM-ohjaus (Nopeuden säätö)
-- **GPIO21** -> 1kΩ vastus -> BC547 Base (B)
-- **BC547 Collector (C)** -> Puhaltimen Keltainen (PWM input)
-- **BC547 Emitter (E)** -> GND
+- **GPIO21** -> 1 kΩ vastus -> BC547 Base (B) (keskijalka)
+- **BC547 Collector (C)** (vasen jalka) -> Puhaltimen keltainen (PWM)
+- **BC547 Emitter (E)** (oikea jalka) -> GND (yhteinen maa)
+- **PULL-UP VASTUS:** Kytke 1 kΩ - 10 kΩ vastus puhaltimen punaisen (+10V) ja keltaisen (PWM) johdon välille. Tämä simuloi ohjausjännitettä.
 
 *Huom: Kytkentä on invertoitu (Transistori ON = PWM 0V). YAML-konfiguraatiossa on `inverted: true`.*
 
 ### 2. RPM-mittaus (Pyörintänopeus)
-- **GPIO47** -> Puhaltimen Valkoinen (Tacho)
-- Puhaltimen Sininen -> GND
+- **GPIO47** -> Puhaltimen valkoinen (tacho)
+- **Puhaltimen sininen** -> ESP32 GND (varmista yhteinen maa)
 
 *Käytössä ESP32:n sisäinen INPUT_PULLUP.*
 

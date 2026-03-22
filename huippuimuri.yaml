@@ -37,6 +37,11 @@ sensor:
     name: "Puhaltimen nopeus"
     unit_of_measurement: "RPM"
     update_interval: 5s
+    # Tasoittaa hetkellista heilahtelua RPM-lukemassa.
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
 
 output:
   - platform: ledc
