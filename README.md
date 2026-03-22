@@ -5,6 +5,7 @@ Tämä projekti ohjaa pölynimurin puhaltimen nopeutta ESP32-S3-mikrokontrolleri
 ## Ominaisuudet
 
 - **Pulssilaskuri**: Mittaa puhaltimen kierrosnopeuden (RPM) GPIO47-pinistä.
+- **RPM-suodatus**: Käyttää liikkuvaa keskiarvoa (sliding_window_moving_average) poistamaan lukeman vilkkumista.
 - **PWM-säätö**: Ohjaa puhaltimen nopeutta GPIO21-pinillä LEDC:llä.
 - **Web-palvelin**: Tarjoaa käyttöliittymän portissa 80.
 - **WiFi-yhteys**: Yhdistää kotiverkkoon salaisilla tiedoilla.
