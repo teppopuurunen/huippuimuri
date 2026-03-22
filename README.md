@@ -61,7 +61,10 @@ Tämä ohje perustuu miltei ECo125 FLOW -malleihin (E6/BB). Puhaltimen ohjaus ta
 
 ## GPIO-kytkentä ESP32-S3 kohdalla
 
-- `GPIO21` -> Punainen ohjausjohto -> 1 kΩ sarjavastus -> Puhaltimen keltainen (PWM input)
+- `GPIO21` -> 1 kΩ vastus -> BC547 Base (B)
+- BC547 Collector (C) -> Puhaltimen keltainen (PWM input)
+- BC547 Emitter (E) -> ESP32 GND
+- Puhaltimen punainen (+10V) -> 1 kΩ - 10 kΩ pull-up -> Puhaltimen keltainen (PWM input)
 - `GPIO47` -> Puhaltimen valkoinen (tacho) -> `pulse_counter`-sensori
 - Puhaltimen sininen -> ESP32 GND
 
