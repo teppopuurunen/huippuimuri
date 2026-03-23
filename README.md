@@ -1,6 +1,6 @@
 # Huippuimuri ESPHome -projekti
 
-Tämä projekti ohjaa pölynimurin (ECo125 FLOW) puhaltimen nopeutta ESP32-S3-mikrokontrollerilla käyttäen ESPHomea. Puhallin säätyy automaattisesti huoneilman CO2-pitoisuuden mukaan hyödyntäen IKEA Dirigera -keskittimen kautta luettavia CO2-antureita.
+Tämä projekti ohjaa huippuimurin (ECo125 FLOW) puhaltimen nopeutta ESP32-S3-mikrokontrollerilla käyttäen ESPHomea. Puhallin säätyy automaattisesti huoneilman CO2-pitoisuuden mukaan hyödyntäen IKEA Dirigera -keskittimen kautta luettavia CO2-antureita.
 
 ## Ominaisuudet
 
