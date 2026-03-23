@@ -26,22 +26,76 @@ wifi:
 web_server:
   port: 80
 
+http_request:
+  useragent: esphome/huippuimuri
+  timeout: 10s
+  verify_ssl: false
+  buffer_size_rx: 4096
+  buffer_size_tx: 1024
+
+globals:
+  - id: co2_anturi1
+    type: float
+    initial_value: '400'
+  - id: co2_anturi2
+    type: float
+    initial_value: '400'
+  - id: co2_anturi1_updated_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: co2_anturi2_updated_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: co2_smoothed
+    type: float
+    initial_value: '400'
+  - id: co2_smoothed_initialized
+    type: bool
+    initial_value: 'false'
+  - id: co2_fail_cycles
+    type: int
+    initial_value: '0'
+  - id: co2_stage
+    type: int
+    initial_value: '2'
+
 sensor:
   - platform: wifi_signal
     name: "WiFi Signal Strength"
     update_interval: 60s
+
   - platform: pulse_counter
-    pin: 
+    pin:
       number: GPIO47
       mode: INPUT_PULLUP
     name: "Puhaltimen nopeus"
     unit_of_measurement: "RPM"
     update_interval: 5s
-    # Tasoittaa hetkellista heilahtelua RPM-lukemassa.
     filters:
       - sliding_window_moving_average:
           window_size: 5
           send_every: 1
+
+  - platform: template
+    name: "CO2 anturi 1"
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+    lambda: 'return id(co2_anturi1);'
+    update_interval: 30s
+
+  - platform: template
+    name: "CO2 anturi 2"
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+    lambda: 'return id(co2_anturi2);'
+    update_interval: 30s
+
+  - platform: template
+    name: "CO2 maksimi"
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+    lambda: 'return id(co2_smoothed);'
+    update_interval: 30s
 
 output:
   - platform: ledc
@@ -54,3 +108,161 @@ fan:
   - platform: speed
     output: puhallin_pwm
     name: "Huippuimurin säätö"
+    id: huopa_fan
+
+switch:
+  - platform: template
+    name: "CO2 automaattiohjaus"
+    id: co2_auto_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      - logger.log: "CO2-automaattiohjaus paalla"
+    turn_off_action:
+      - lambda: |-
+          id(co2_fail_cycles) = 0;
+      - logger.log: "CO2-automaattiohjaus pois, kasiajo aktiivinen"
+
+interval:
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            switch.is_on: co2_auto_enabled
+          then:
+            - http_request.get:
+                url: "https://192.168.100.11:8443/v1/devices/692d4da0-a143-42c1-8074-113399f741f2_1"
+                max_response_buffer_size: 8192
+                request_headers:
+                  Authorization: !secret dirigera_auth_header
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGW("co2", "Anturi1 HTTP-virhe: %d", response->status_code);
+                          return;
+                        }
+                        bool parsed = json::parse_json(body, [&](JsonObject root) -> bool {
+                          if (!root["attributes"].is<JsonObject>()) {
+                            return false;
+                          }
+                          JsonObject attributes = root["attributes"];
+                          if (attributes["currentCO2"].isNull()) {
+                            return false;
+                          }
+                          float co2 = attributes["currentCO2"].as<float>();
+                          if (co2 > 0 && co2 < 5000) {
+                            id(co2_anturi1) = co2;
+                            id(co2_anturi1_updated_ms) = millis();
+                            ESP_LOGI("co2", "Anturi1: %.0f ppm", co2);
+                            return true;
+                          }
+                          return false;
+                        });
+                        if (!parsed) {
+                          ESP_LOGW("co2", "Anturi1 JSON-parsinta epaonnistui");
+                        }
+                on_error:
+                  then:
+                    - logger.log: "Anturi1 HTTP-pyynto epaonnistui"
+
+            - http_request.get:
+                url: "https://192.168.100.11:8443/v1/devices/042c81ef-986d-4541-a8f4-9c4b907c0f5a_1"
+                max_response_buffer_size: 8192
+                request_headers:
+                  Authorization: !secret dirigera_auth_header
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          ESP_LOGW("co2", "Anturi2 HTTP-virhe: %d", response->status_code);
+                          return;
+                        }
+                        bool parsed = json::parse_json(body, [&](JsonObject root) -> bool {
+                          if (!root["attributes"].is<JsonObject>()) {
+                            return false;
+                          }
+                          JsonObject attributes = root["attributes"];
+                          if (attributes["currentCO2"].isNull()) {
+                            return false;
+                          }
+                          float co2 = attributes["currentCO2"].as<float>();
+                          if (co2 > 0 && co2 < 5000) {
+                            id(co2_anturi2) = co2;
+                            id(co2_anturi2_updated_ms) = millis();
+                            ESP_LOGI("co2", "Anturi2: %.0f ppm", co2);
+                            return true;
+                          }
+                          return false;
+                        });
+                        if (!parsed) {
+                          ESP_LOGW("co2", "Anturi2 JSON-parsinta epaonnistui");
+                        }
+                on_error:
+                  then:
+                    - logger.log: "Anturi2 HTTP-pyynto epaonnistui"
+
+            - lambda: |-
+                const uint32_t now = millis();
+                const uint32_t stale_after_ms = 120000;
+                bool anturi1_valid = id(co2_anturi1_updated_ms) != 0 && (now - id(co2_anturi1_updated_ms) <= stale_after_ms);
+                bool anturi2_valid = id(co2_anturi2_updated_ms) != 0 && (now - id(co2_anturi2_updated_ms) <= stale_after_ms);
+
+                if (!anturi1_valid && !anturi2_valid) {
+                  id(co2_fail_cycles) += 1;
+                  if (id(co2_fail_cycles) >= 3) {
+                    auto call = id(huopa_fan).make_call();
+                    call.set_state(true);
+                    call.set_speed(55);
+                    call.perform();
+                    id(co2_stage) = 2;
+                    ESP_LOGW("fan", "CO2-data puuttuu %d jaksoa, asetetaan varateho 55%%", id(co2_fail_cycles));
+                  } else {
+                    ESP_LOGW("fan", "CO2-data vanhentunut (%d/3), pidetaan nykyinen teho", id(co2_fail_cycles));
+                  }
+                  return;
+                }
+
+                id(co2_fail_cycles) = 0;
+
+                float raw_co2 = anturi1_valid && anturi2_valid ? max(id(co2_anturi1), id(co2_anturi2)) : (anturi1_valid ? id(co2_anturi1) : id(co2_anturi2));
+
+                if (!id(co2_smoothed_initialized)) {
+                  id(co2_smoothed) = raw_co2;
+                  id(co2_smoothed_initialized) = true;
+                } else {
+                  id(co2_smoothed) = id(co2_smoothed) * 0.7f + raw_co2 * 0.3f;
+                }
+
+                int stage = id(co2_stage);
+                float co2 = id(co2_smoothed);
+                if (stage == 0) {
+                  if (co2 >= 650) stage = 1;
+                } else if (stage == 1) {
+                  if (co2 < 550) stage = 0;
+                  else if (co2 >= 850) stage = 2;
+                } else if (stage == 2) {
+                  if (co2 < 750) stage = 1;
+                  else if (co2 >= 1050)  stage = 3;
+                } else if (stage == 3) {
+                  if (co2 < 950) stage = 2;
+                  else if (co2 >= 1250) stage = 4;
+                } else {
+                  if (co2 < 1150) stage = 3;
+                }
+
+                id(co2_stage) = stage;
+
+                float speed = 20.0f;
+                if (stage == 1) speed = 35.0f;
+                else if (stage == 2) speed = 55.0f;
+                else if (stage == 3) speed = 75.0f;
+                else if (stage >= 4) speed = 100.0f;
+
+                auto call = id(huopa_fan).make_call();
+                call.set_state(true);
+                call.set_speed(speed);
+                call.perform();
+                ESP_LOGI("fan", "CO2 raw: %.0f ppm, smooth: %.0f ppm, stage: %d -> teho: %.0f%%", raw_co2, co2, stage, speed);
