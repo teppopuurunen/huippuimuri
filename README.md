@@ -39,7 +39,7 @@ Varatoiminto (data vanhentuu): 55 % (porras 2).
 - **MCU:** ESP32-S3 DevKit
 - **Transistori:** BC547 (NPN)
 - **Vastus:** 1 kΩ (base-vastus)
-- **Vastus:** 1 kΩ – 10 kΩ (pull-up punaisen ja keltaisen väliin)
+- **Vastus:** 1 kΩ (pull-up punaisen ja keltaisen väliin)
 
 ## Asennus
 
@@ -91,7 +91,7 @@ Tämä ohje perustuu ECo125 FLOW -malleihin (E6/BB). Puhaltimen ohjaus tapahtuu 
 - `GPIO21` → 1 kΩ vastus → BC547 Base (B)
 - BC547 Collector (C) → Puhaltimen keltainen (PWM input)
 - BC547 Emitter (E) → ESP32 GND
-- Puhaltimen punainen (+10V) → 1 kΩ – 10 kΩ pull-up → Puhaltimen keltainen (PWM input)
+- Puhaltimen punainen (+10V) → 1 kΩ pull-up → Puhaltimen keltainen (PWM input)
 - `GPIO47` → Puhaltimen valkoinen (tacho) → `pulse_counter`-sensori
 - Puhaltimen sininen → ESP32 GND
 
@@ -105,7 +105,7 @@ Tämä kytkentä mahdollistaa 3.3 V ESP32-signaalin muuntamisen puhaltimen vaati
 - **GPIO21** → 1 kΩ vastus → BC547 Base (B) (keskijalka)
 - **BC547 Collector (C)** (vasen jalka) → Puhaltimen keltainen (PWM)
 - **BC547 Emitter (E)** (oikea jalka) → GND (yhteinen maa)
-- **PULL-UP VASTUS:** Kytke 1 kΩ – 10 kΩ vastus puhaltimen punaisen (+10V) ja keltaisen (PWM) johdon välille.
+- **PULL-UP VASTUS:** Kytke 1 kΩ vastus puhaltimen punaisen (+10V) ja keltaisen (PWM) johdon välille.
 
 *Huom: Kytkentä on invertoitu (transistori ON = PWM 0V). YAML-konfiguraatiossa `inverted: true`.*
 
