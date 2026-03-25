@@ -5,27 +5,29 @@ Tämä projekti ohjaa huippuimurin (ECo125 FLOW) puhaltimen nopeutta ESP32-S3-mi
 ## Ominaisuudet
 
 - **CO2-automaattiohjaus**: Hakee CO2-arvot kahdelta IKEA-anturilta Dirigera-hubilta (HTTPS) 30 sekunnin välein ja säätää puhaltimen tehon automaattisesti.
-- **Porrastettu nopeussäätö**: 5 porrasta hysteresiksellä — ei turhia heilahteluja.
-- **Eksponentiaalinen tasoitus (EMA)**: CO2-arvo tasoitetaan (70/30) ennen portaiden laskentaa.
-- **Varatoiminto**: Jos CO2-data on vanhentunut ≥ 3 sykliä, puhallin asetetaan automaattisesti 55% tehoon.
+- **Jatkuva P-säätö (ei portaita)**: Teho lasketaan lineaarisesti CO2 min/max -rajojen välillä.
+- **Lämpötilarajoitus**: Kylmempi anturi rajoittaa sallittua maksimitehoa (lineaarinen P-rajoitus).
+- **Eksponentiaalinen tasoitus (EMA)**: CO2-arvo tasoitetaan (70/30) ennen säätölaskentaa.
+- **Ramppi ylös/alas**: Teho liikkuu kohti tavoitetta rajatulla nopeudella (sekunteina säädettävä).
+- **Varatoiminto**: Jos CO2-data on vanhentunut ≥ 3 sykliä, puhallin asetetaan automaattisesti fan min/max -arvojen keskelle.
+- **Asetusten turvalogiikka**: Min/max-arvot suojataan ajossa (clamp + swap), jos käyttäjä asettaa rajat ristiin.
 - **CO2 automaattiohjaus -kytkin**: Kytkimen voi sammuttaa, jolloin puhallin siirtyy käsiajoon eikä CO2-logiikka enää overridaa asetettua nopeutta.
 - **RPM-mittaus**: Pulssilaskuri GPIO47:ssä mittaa puhaltimen kierrosnopeuden.
 - **PWM-ohjaus**: Puhaltimen nopeus ohjataan GPIO21:n LEDC-PWM:llä (5 kHz, invertoitu).
 - **Web-palvelin**: ESPHome-web-käyttöliittymä portissa 80.
+- **Järjestetty web-näkymä**: Web Server v3 ryhmittelee asetukset ja mittaukset loogiseen järjestykseen.
 - **OTA-päivitys**: Firmware päivitettävissä WiFin yli.
 - **Kahden WiFi-verkon tuki**: Ensisijainen ja varaverkko prioriteetin mukaan.
 
-## CO2-ohjauksen portaat
+## Ohjauslogiikka
 
-| Porras | Nopeus | CO2 nousu (kynnys) | CO2 lasku (hystereesi) |
-|--------|--------|-------------------|----------------------|
-| 0 | 20 % | ≥ 650 ppm → porras 1 | — |
-| 1 | 35 % | ≥ 850 ppm → porras 2 | < 550 ppm → porras 0 |
-| 2 | 55 % | ≥ 1050 ppm → porras 3 | < 750 ppm → porras 1 |
-| 3 | 75 % | ≥ 1250 ppm → porras 4 | < 950 ppm → porras 2 |
-| 4 | 100 % | — | < 1150 ppm → porras 3 |
-
-Varatoiminto (data vanhentuu): 55 % (porras 2).
+- **CO2 P-säätö**: CO2 min/max -arvot mapataan lineaarisesti puhaltimen min/max-tehoon.
+- **Lämpötilarajoitus**: Kylmimmän lämpötila-anturin arvo määrittää sallitun enimmäistehon temp min/max -alueella.
+- **Yhdistetty tavoite**: Lopullinen tavoitenopeus on `min(co2_speed, temp_limit)`.
+- **Ramppi**: Toteutuva nopeus lähestyy tavoitetta hallitusti `fan_ramp_up` ja `fan_ramp_down` -parametreilla.
+- **Minimimuutoskynnys**: Fan-komento lähetetään vain, jos nopeus muuttuu vähintään asetetun deadband-arvon verran (oletus 3 %).
+- **Varateho**: Jos CO2-data vanhenee 3 peräkkäistä jaksoa, teho asetetaan fan min/max -arvojen keskipisteeseen.
+- **Lämpötila-anturidatan vanheneminen**: Jos lämpötiladata puuttuu molemmilta antureilta, lämpötilarajoitusta ei käytetä (CO2-ohjaus jatkuu).
 
 ## Vaatimukset
 
@@ -74,7 +76,8 @@ Varatoiminto (data vanhentuu): 55 % (porras 2).
 
 - **Logit**: `esphome logs huippuimuri.yaml --device 192.168.100.xx`
 - **CO2-automaattiohjaus**: Web-käyttöliittymässä tai Home Assistantissa kytkin "CO2 automaattiohjaus" — ON = automaatti, OFF = käsiajo
-- **Sensorit**: CO2 anturi 1, CO2 anturi 2, CO2 maksimi (tasoitettu arvo), Puhaltimen nopeus (RPM), WiFi Signal Strength
+- **Nörttikytkin (HTTP debug)**: Kun ON, lokiin tulostetaan koko Dirigera-vastaus (esim. `currentRelativeHumidity`, `currentPM25`), jotta uusia attribuutteja on helppo löytää.
+- **Sensorit**: CO2 anturi 1, CO2 anturi 2, CO2 maksimi (tasoitettu arvo), Alakerran lämpötila, Yläkerran lämpötila, Kylmin lämpötila, Puhaltimen nopeus (RPM), WiFi Signal Strength
 
 ## ECo125 FLOW -kytkentä
 
@@ -123,6 +126,8 @@ Katso `huippuimuri.yaml` yksityiskohdista. Tärkeimmät parametrit:
 - `max_response_buffer_size: 8192` — per HTTP-pyyntö
 - CO2-haku 30 s välein, EMA-tasoitus 70/30
 - Vanhentuneen datan raja: 120 s (2 min)
+- Säädettävät numeroparametrit (web/UI): `co2_min`, `co2_max`, `fan_speed_min`, `fan_speed_max`, `temp_min`, `temp_max`, `fan_ramp_up`, `fan_ramp_down`, `fan_command_deadband`
+- Deadband-suositus: `fan_command_deadband` yleensä 2-4 % (isompi arvo = vähemmän fan-komentoja)
 
 ## Lisenssi
 

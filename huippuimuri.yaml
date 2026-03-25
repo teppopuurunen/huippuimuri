@@ -25,6 +25,14 @@ wifi:
 
 web_server:
   port: 80
+  version: 3
+  sorting_groups:
+    - id: sorting_group_settings
+      name: "Asetukset"
+      sorting_weight: 10
+    - id: sorting_group_runtime
+      name: "Tila ja mittaukset"
+      sorting_weight: 20
 
 http_request:
   useragent: esphome/huippuimuri
@@ -55,14 +63,29 @@ globals:
   - id: co2_fail_cycles
     type: int
     initial_value: '0'
-  - id: co2_stage
-    type: int
-    initial_value: '2'
+  - id: temp_anturi1
+    type: float
+    initial_value: '20.0'
+  - id: temp_anturi2
+    type: float
+    initial_value: '20.0'
+  - id: temp_anturi1_updated_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: temp_anturi2_updated_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: fan_current_speed
+    type: float
+    initial_value: '20.0'
 
 sensor:
   - platform: wifi_signal
     name: "WiFi Signal Strength"
     update_interval: 60s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 80
 
   - platform: pulse_counter
     pin:
@@ -75,6 +98,9 @@ sensor:
       - sliding_window_moving_average:
           window_size: 5
           send_every: 1
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 70
 
   - platform: template
     name: "CO2 anturi 1"
@@ -82,6 +108,9 @@ sensor:
     accuracy_decimals: 0
     lambda: 'return id(co2_anturi1);'
     update_interval: 30s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 10
 
   - platform: template
     name: "CO2 anturi 2"
@@ -89,6 +118,9 @@ sensor:
     accuracy_decimals: 0
     lambda: 'return id(co2_anturi2);'
     update_interval: 30s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 11
 
   - platform: template
     name: "CO2 maksimi"
@@ -96,6 +128,39 @@ sensor:
     accuracy_decimals: 0
     lambda: 'return id(co2_smoothed);'
     update_interval: 30s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 12
+
+  - platform: template
+    name: "Alakerran lämpötila"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: 'return id(temp_anturi1);'
+    update_interval: 30s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 20
+
+  - platform: template
+    name: "Yläkerran lämpötila"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: 'return id(temp_anturi2);'
+    update_interval: 30s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 21
+
+  - platform: template
+    name: "Kylmin lämpötila"
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: 'return min(id(temp_anturi1), id(temp_anturi2));'
+    update_interval: 30s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 22
 
 output:
   - platform: ledc
@@ -109,6 +174,9 @@ fan:
     output: puhallin_pwm
     name: "Huippuimurin säätö"
     id: huopa_fan
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 15
 
 switch:
   - platform: template
@@ -116,12 +184,174 @@ switch:
     id: co2_auto_enabled
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 10
     turn_on_action:
+      - lambda: |-
+          if (id(huopa_fan).state) {
+            id(fan_current_speed) = id(huopa_fan).speed;
+          } else {
+            id(fan_current_speed) = id(fan_speed_min).state;
+          }
+          id(co2_fail_cycles) = 0;
       - logger.log: "CO2-automaattiohjaus paalla"
     turn_off_action:
       - lambda: |-
+          if (id(huopa_fan).state) {
+            id(fan_current_speed) = id(huopa_fan).speed;
+          }
           id(co2_fail_cycles) = 0;
       - logger.log: "CO2-automaattiohjaus pois, kasiajo aktiivinen"
+
+  - platform: template
+    name: "Nörttikytkin (HTTP debug)"
+    id: nerd_debug_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 90
+    turn_on_action:
+      - logger.log: "Nörttikytkin paalla: HTTP-vastaukset lokitetaan"
+    turn_off_action:
+      - logger.log: "Nörttikytkin pois: HTTP-vastauslokitus pois"
+
+number:
+  - platform: template
+    name: "CO2 alaraja (min teho)"
+    id: co2_min
+    min_value: 300
+    max_value: 1500
+    step: 50
+    initial_value: 600
+    restore_value: true
+    unit_of_measurement: "ppm"
+    optimistic: true
+    icon: mdi:molecule-co2
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 20
+
+  - platform: template
+    name: "CO2 yläraja (max teho)"
+    id: co2_max
+    min_value: 400
+    max_value: 2000
+    step: 50
+    initial_value: 1200
+    restore_value: true
+    unit_of_measurement: "ppm"
+    optimistic: true
+    icon: mdi:molecule-co2
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 21
+
+  - platform: template
+    name: "Puhaltimen minimiteho"
+    id: fan_speed_min
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 20
+    restore_value: true
+    unit_of_measurement: "%"
+    optimistic: true
+    icon: mdi:fan-speed-1
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 30
+
+  - platform: template
+    name: "Puhaltimen maksimiteho"
+    id: fan_speed_max
+    min_value: 0
+    max_value: 100
+    step: 5
+    initial_value: 100
+    restore_value: true
+    unit_of_measurement: "%"
+    optimistic: true
+    icon: mdi:fan-speed-3
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 31
+
+  - platform: template
+    name: "Lämpötila alaraja (max teho)"
+    id: temp_min
+    min_value: 10
+    max_value: 25
+    step: 0.5
+    initial_value: 18
+    restore_value: true
+    unit_of_measurement: "°C"
+    optimistic: true
+    icon: mdi:thermometer-low
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 40
+
+  - platform: template
+    name: "Lämpötila yläraja (ei rajoitusta)"
+    id: temp_max
+    min_value: 10
+    max_value: 30
+    step: 0.5
+    initial_value: 21
+    restore_value: true
+    unit_of_measurement: "°C"
+    optimistic: true
+    icon: mdi:thermometer-high
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 41
+
+  - platform: template
+    name: "Ramppi ylös (s)"
+    id: fan_ramp_up
+    min_value: 30
+    max_value: 600
+    step: 30
+    initial_value: 120
+    restore_value: true
+    unit_of_measurement: "s"
+    optimistic: true
+    icon: mdi:fan-plus
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 50
+
+  - platform: template
+    name: "Ramppi alas (s)"
+    id: fan_ramp_down
+    min_value: 30
+    max_value: 600
+    step: 30
+    initial_value: 300
+    restore_value: true
+    unit_of_measurement: "s"
+    optimistic: true
+    icon: mdi:fan-minus
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 51
+
+  - platform: template
+    name: "Fan-komennon minimimuutos (suositus 2-4 %)"
+    id: fan_command_deadband
+    min_value: 0
+    max_value: 10
+    step: 0.5
+    initial_value: 3
+    restore_value: true
+    unit_of_measurement: "%"
+    optimistic: true
+    icon: mdi:tune
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 52
 
 interval:
   - interval: 30s
@@ -139,6 +369,9 @@ interval:
                 on_response:
                   then:
                     - lambda: |-
+                        if (id(nerd_debug_enabled).state) {
+                          ESP_LOGD("debug", "Anturi1 vastaus: %s", body.c_str());
+                        }
                         if (response->status_code != 200) {
                           ESP_LOGW("co2", "Anturi1 HTTP-virhe: %d", response->status_code);
                           return;
@@ -156,9 +389,16 @@ interval:
                             id(co2_anturi1) = co2;
                             id(co2_anturi1_updated_ms) = millis();
                             ESP_LOGI("co2", "Anturi1: %.0f ppm", co2);
-                            return true;
                           }
-                          return false;
+                          if (!attributes["currentTemperature"].isNull()) {
+                            float temp = attributes["currentTemperature"].as<float>();
+                            if (temp > -20 && temp < 60) {
+                              id(temp_anturi1) = temp;
+                              id(temp_anturi1_updated_ms) = millis();
+                              ESP_LOGI("temp", "Anturi1 lampotila: %.1f C", temp);
+                            }
+                          }
+                          return true;
                         });
                         if (!parsed) {
                           ESP_LOGW("co2", "Anturi1 JSON-parsinta epaonnistui");
@@ -176,6 +416,9 @@ interval:
                 on_response:
                   then:
                     - lambda: |-
+                        if (id(nerd_debug_enabled).state) {
+                          ESP_LOGD("debug", "Anturi2 vastaus: %s", body.c_str());
+                        }
                         if (response->status_code != 200) {
                           ESP_LOGW("co2", "Anturi2 HTTP-virhe: %d", response->status_code);
                           return;
@@ -193,9 +436,16 @@ interval:
                             id(co2_anturi2) = co2;
                             id(co2_anturi2_updated_ms) = millis();
                             ESP_LOGI("co2", "Anturi2: %.0f ppm", co2);
-                            return true;
                           }
-                          return false;
+                          if (!attributes["currentTemperature"].isNull()) {
+                            float temp = attributes["currentTemperature"].as<float>();
+                            if (temp > -20 && temp < 60) {
+                              id(temp_anturi2) = temp;
+                              id(temp_anturi2_updated_ms) = millis();
+                              ESP_LOGI("temp", "Anturi2 lampotila: %.1f C", temp);
+                            }
+                          }
+                          return true;
                         });
                         if (!parsed) {
                           ESP_LOGW("co2", "Anturi2 JSON-parsinta epaonnistui");
@@ -207,18 +457,34 @@ interval:
             - lambda: |-
                 const uint32_t now = millis();
                 const uint32_t stale_after_ms = 120000;
+
                 bool anturi1_valid = id(co2_anturi1_updated_ms) != 0 && (now - id(co2_anturi1_updated_ms) <= stale_after_ms);
                 bool anturi2_valid = id(co2_anturi2_updated_ms) != 0 && (now - id(co2_anturi2_updated_ms) <= stale_after_ms);
+                bool temp1_valid = id(temp_anturi1_updated_ms) != 0 && (now - id(temp_anturi1_updated_ms) <= stale_after_ms);
+                bool temp2_valid = id(temp_anturi2_updated_ms) != 0 && (now - id(temp_anturi2_updated_ms) <= stale_after_ms);
+
+                float s_min = id(fan_speed_min).state;
+                float s_max = id(fan_speed_max).state;
+                if (s_min < 0.0f) s_min = 0.0f;
+                if (s_min > 100.0f) s_min = 100.0f;
+                if (s_max < 0.0f) s_max = 0.0f;
+                if (s_max > 100.0f) s_max = 100.0f;
+                if (s_max < s_min) {
+                  float tmp = s_min;
+                  s_min = s_max;
+                  s_max = tmp;
+                }
 
                 if (!anturi1_valid && !anturi2_valid) {
                   id(co2_fail_cycles) += 1;
                   if (id(co2_fail_cycles) >= 3) {
+                    const float fallback = (s_min + s_max) / 2.0f;
+                    id(fan_current_speed) = fallback;
                     auto call = id(huopa_fan).make_call();
                     call.set_state(true);
-                    call.set_speed(55);
+                    call.set_speed((int) fallback);
                     call.perform();
-                    id(co2_stage) = 2;
-                    ESP_LOGW("fan", "CO2-data puuttuu %d jaksoa, asetetaan varateho 55%%", id(co2_fail_cycles));
+                    ESP_LOGW("fan", "CO2-data puuttuu %d jaksoa, asetetaan varateho %.0f%%", id(co2_fail_cycles), fallback);
                   } else {
                     ESP_LOGW("fan", "CO2-data vanhentunut (%d/3), pidetaan nykyinen teho", id(co2_fail_cycles));
                   }
@@ -236,33 +502,94 @@ interval:
                   id(co2_smoothed) = id(co2_smoothed) * 0.7f + raw_co2 * 0.3f;
                 }
 
-                int stage = id(co2_stage);
-                float co2 = id(co2_smoothed);
-                if (stage == 0) {
-                  if (co2 >= 650) stage = 1;
-                } else if (stage == 1) {
-                  if (co2 < 550) stage = 0;
-                  else if (co2 >= 850) stage = 2;
-                } else if (stage == 2) {
-                  if (co2 < 750) stage = 1;
-                  else if (co2 >= 1050)  stage = 3;
-                } else if (stage == 3) {
-                  if (co2 < 950) stage = 2;
-                  else if (co2 >= 1250) stage = 4;
-                } else {
-                  if (co2 < 1150) stage = 3;
+                float c_min = id(co2_min).state;
+                float c_max = id(co2_max).state;
+                if (c_max < c_min) {
+                  float tmp = c_min;
+                  c_min = c_max;
+                  c_max = tmp;
                 }
 
-                id(co2_stage) = stage;
+                float t_min = id(temp_min).state;
+                float t_max = id(temp_max).state;
+                if (t_max < t_min) {
+                  float tmp = t_min;
+                  t_min = t_max;
+                  t_max = tmp;
+                }
 
-                float speed = 20.0f;
-                if (stage == 1) speed = 35.0f;
-                else if (stage == 2) speed = 55.0f;
-                else if (stage == 3) speed = 75.0f;
-                else if (stage >= 4) speed = 100.0f;
+                float co2 = id(co2_smoothed);
+                float co2_speed;
+                if (c_max <= c_min) {
+                  co2_speed = s_min;
+                } else if (co2 <= c_min) {
+                  co2_speed = s_min;
+                } else if (co2 >= c_max) {
+                  co2_speed = s_max;
+                } else {
+                  co2_speed = s_min + (co2 - c_min) / (c_max - c_min) * (s_max - s_min);
+                }
 
-                auto call = id(huopa_fan).make_call();
-                call.set_state(true);
-                call.set_speed(speed);
-                call.perform();
-                ESP_LOGI("fan", "CO2 raw: %.0f ppm, smooth: %.0f ppm, stage: %d -> teho: %.0f%%", raw_co2, co2, stage, speed);
+                float temp_limit = s_max;
+                float coldest_temp = 0.0f;
+                if (temp1_valid || temp2_valid) {
+                  coldest_temp = temp1_valid && temp2_valid ? min(id(temp_anturi1), id(temp_anturi2)) : (temp1_valid ? id(temp_anturi1) : id(temp_anturi2));
+                  if (t_max <= t_min) {
+                    temp_limit = s_max;
+                  } else if (coldest_temp >= t_max) {
+                    temp_limit = s_max;
+                  } else if (coldest_temp <= t_min) {
+                    temp_limit = s_min;
+                  } else {
+                    temp_limit = s_min + (coldest_temp - t_min) / (t_max - t_min) * (s_max - s_min);
+                  }
+                } else {
+                  ESP_LOGW("temp", "Lampotiladata vanhentunut, ei rajoiteta tehoa lampotilan perusteella");
+                }
+
+                float target = min(co2_speed, temp_limit);
+                if (target < s_min) target = s_min;
+                if (target > s_max) target = s_max;
+
+                float current = id(fan_current_speed);
+                if (current < s_min) current = s_min;
+                if (current > s_max) current = s_max;
+
+                float ramp_up_sec = id(fan_ramp_up).state;
+                float ramp_down_sec = id(fan_ramp_down).state;
+                if (ramp_up_sec < 1.0f) ramp_up_sec = 1.0f;
+                if (ramp_down_sec < 1.0f) ramp_down_sec = 1.0f;
+                float ramp_up_step = 100.0f * (30.0f / ramp_up_sec);
+                float ramp_down_step = 100.0f * (30.0f / ramp_down_sec);
+
+                if (target > current) {
+                  current = min(current + ramp_up_step, target);
+                } else if (target < current) {
+                  current = max(current - ramp_down_step, target);
+                }
+
+                id(fan_current_speed) = current;
+
+                float command_deadband = id(fan_command_deadband).state;
+                if (command_deadband < 0.0f) command_deadband = 0.0f;
+                if (command_deadband > 20.0f) command_deadband = 20.0f;
+                float fan_reported = id(huopa_fan).state ? id(huopa_fan).speed : 0.0f;
+                float delta = current - fan_reported;
+                if (delta < 0.0f) delta = -delta;
+
+                if (!id(huopa_fan).state || delta >= command_deadband) {
+                  auto call = id(huopa_fan).make_call();
+                  call.set_state(true);
+                  call.set_speed((int) current);
+                  call.perform();
+                } else {
+                  ESP_LOGD("fan", "Ohitetaan fan-komento: muutos %.1f%% < %.1f%%", delta, command_deadband);
+                }
+
+                if (temp1_valid || temp2_valid) {
+                  ESP_LOGI("fan", "CO2: %.0f ppm -> co2_sp: %.1f%% | temp: %.1f C -> t_limit: %.1f%% | target: %.1f%% | current: %.1f%%",
+                    co2, co2_speed, coldest_temp, temp_limit, target, current);
+                } else {
+                  ESP_LOGI("fan", "CO2: %.0f ppm -> co2_sp: %.1f%% | t_limit ohitettu | target: %.1f%% | current: %.1f%%",
+                    co2, co2_speed, target, current);
+                }
