@@ -11,11 +11,13 @@ Tämä projekti ohjaa huippuimurin (ECo125 FLOW) puhaltimen nopeutta ESP32-S3-mi
 - **Ramppi ylös/alas**: Teho liikkuu kohti tavoitetta rajatulla nopeudella (sekunteina säädettävä).
 - **Varatoiminto**: Jos CO2-data on vanhentunut ≥ 3 sykliä, puhallin asetetaan automaattisesti fan min/max -arvojen keskelle.
 - **Asetusten turvalogiikka**: Min/max-arvot suojataan ajossa (clamp + swap), jos käyttäjä asettaa rajat ristiin.
-- **CO2 automaattiohjaus -kytkin**: Kytkimen voi sammuttaa, jolloin puhallin siirtyy käsiajoon eikä CO2-logiikka enää overridaa asetettua nopeutta.
+- **CO2 automaattiohjaus -kytkin**: Kytkimen voi sammuttaa, jolloin puhallin siirtyy käsiajoon eikä CO2-logiikka enää overridaa asetettua nopeutta, mutta mittausarvot paivittyvat silti.
 - **RPM-mittaus**: Pulssilaskuri GPIO47:ssä mittaa puhaltimen kierrosnopeuden.
 - **PWM-ohjaus**: Puhaltimen nopeus ohjataan GPIO21:n LEDC-PWM:llä (5 kHz, invertoitu).
 - **Web-palvelin**: ESPHome-web-käyttöliittymä portissa 80.
 - **Järjestetty web-näkymä**: Web Server v3 ryhmittelee asetukset ja mittaukset loogiseen järjestykseen.
+- **Käsinopeussäätö erikseen**: Web UI:ssa käsiajon nopeussäätö on omalla rivillään (`Kasinopeus (%)`), jolloin automaattiohjauskytkin ja säätö eivät ole samalla rivillä.
+- **Aikapalvelu (SNTP)**: Suomen aikavyöhyke synkronoidaan (`EET/EEST`) ajastuksia ja aikaleimoja varten.
 - **OTA-päivitys**: Firmware päivitettävissä WiFin yli.
 - **Kahden WiFi-verkon tuki**: Ensisijainen ja varaverkko prioriteetin mukaan.
 
@@ -57,6 +59,7 @@ Tämä projekti ohjaa huippuimurin (ECo125 FLOW) puhaltimen nopeutta ESP32-S3-mi
    wifi_password: "sinun_salasana"
    wifi2_ssid: "varaverkko_ssid"
    wifi2_password: "varaverkko_salasana"
+   dirigera_host: "192.168.100.xx"
    dirigera_auth_header: "Bearer <Dirigera-token>"
    ```
 
@@ -72,11 +75,19 @@ Tämä projekti ohjaa huippuimurin (ECo125 FLOW) puhaltimen nopeutta ESP32-S3-mi
 
 5. Avaa selaimessa: `http://huippuimuri.local`
 
+## IP-lukitukset (suositus)
+
+Jotta yhteydet eivät katkea IP-osoitteiden vaihtuessa, lukitse reitittimestä vähintään nämä laitteet:
+
+- **Dirigera-hubi**: MAC `68:EC:8A:0E:DA:33` -> IP `192.168.100.5`
+- **Huippuimuri-ESP**: lukitse käytössä olevan ESP:n MAC samaan kiinteään IP:hen (esim. `192.168.100.4`)
+
+Kun IP-lukitukset on tehty, pidä `secrets.yaml`-tiedoston `dirigera_host` samassa osoitteessa kuin reitittimen sidonta.
+
 ## Käyttö
 
 - **Logit**: `esphome logs huippuimuri.yaml --device 192.168.100.xx`
 - **CO2-automaattiohjaus**: Web-käyttöliittymässä tai Home Assistantissa kytkin "CO2 automaattiohjaus" — ON = automaatti, OFF = käsiajo
-- **Nörttikytkin (HTTP debug)**: Kun ON, lokiin tulostetaan koko Dirigera-vastaus (esim. `currentRelativeHumidity`, `currentPM25`), jotta uusia attribuutteja on helppo löytää.
 - **Sensorit**: CO2 anturi 1, CO2 anturi 2, CO2 maksimi (tasoitettu arvo), Alakerran lämpötila, Yläkerran lämpötila, Kylmin lämpötila, Puhaltimen nopeus (RPM), WiFi Signal Strength
 
 ## ECo125 FLOW -kytkentä
@@ -124,10 +135,15 @@ Katso `huippuimuri.yaml` yksityiskohdista. Tärkeimmät parametrit:
 
 - `http_request.buffer_size_rx: 4096` — riittävä Dirigera-vastausten (~1200 B) lukemiseen
 - `max_response_buffer_size: 8192` — per HTTP-pyyntö
+- `substitutions.dirigera_host` — Dirigera-hubin IP-osoite
+- `time.platform: sntp` + `timezone: EET-2EEST,M3.5.0/3,M10.5.0/4` — Suomen aika
+- `web_server.css_include: web_server.css` — mobiilin web-näkymän liukusäädinlayout
 - CO2-haku 30 s välein, EMA-tasoitus 70/30
 - Vanhentuneen datan raja: 120 s (2 min)
 - Säädettävät numeroparametrit (web/UI): `co2_min`, `co2_max`, `fan_speed_min`, `fan_speed_max`, `temp_min`, `temp_max`, `fan_ramp_up`, `fan_ramp_down`, `fan_command_deadband`
 - Deadband-suositus: `fan_command_deadband` yleensä 2-4 % (isompi arvo = vähemmän fan-komentoja)
+
+Mobiili-CSS sijaitsee tiedostossa `web_server.css`.
 
 ## Lisenssi
 

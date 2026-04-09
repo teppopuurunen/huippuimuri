@@ -1,0 +1,59 @@
+/* Keep day/night theme working by avoiding hardcoded page colors. */
+
+/* ESPHome v3 entity layout tuning: keep controls readable on one row, slider below. */
+.entity-row > div:nth-child(3) {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+}
+
+/* Fan/number sliders are web components; force them to their own line. */
+.entity-row > div:nth-child(3) esp-range-slider {
+  display: block !important;
+  flex: 0 0 100% !important;
+  width: 100% !important;
+  min-width: 180px;
+  margin-top: 4px;
+}
+
+/* Improve touch behavior and readability. */
+esp-range-slider {
+  touch-action: pan-y;
+}
+
+button,
+input[type="checkbox"] {
+  min-height: 34px;
+}
+
+@media (max-width: 900px) {
+  .entity-row {
+    display: grid !important;
+    grid-template-columns: 28px minmax(0, 1fr) !important;
+    grid-template-areas:
+      "icon label"
+      "value value" !important;
+    row-gap: 6px;
+  }
+
+  .entity-row > div:nth-child(1) {
+    grid-area: icon;
+  }
+
+  .entity-row > div:nth-child(2) {
+    grid-area: label;
+    min-width: 0;
+  }
+
+  .entity-row > div:nth-child(3) {
+    grid-area: value;
+    justify-content: flex-start !important;
+    width: 100%;
+  }
+
+  .entity-row > div:nth-child(3) esp-range-slider {
+    min-width: 0;
+  }
+}
