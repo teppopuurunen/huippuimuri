@@ -8,7 +8,6 @@ esp32:
   board: esp32-s3-devkitc-1
   framework:
     type: arduino
-
 logger:
   level: INFO
 
@@ -31,6 +30,11 @@ wifi:
     - ssid: !secret wifi2_ssid
       password: !secret wifi2_password
       priority: 50
+  manual_ip:
+    static_ip: 192.168.100.4
+    gateway: 192.168.100.1
+    subnet: 255.255.255.0
+    dns1: 192.168.100.1
 
 web_server:
   port: 80
@@ -88,6 +92,33 @@ globals:
   - id: fan_current_speed
     type: float
     initial_value: '20.0'
+  - id: fan_test_running
+    type: bool
+    initial_value: 'false'
+  - id: fan_test_prev_auto
+    type: bool
+    initial_value: 'false'
+  - id: fan_test_prev_fan_on
+    type: bool
+    initial_value: 'false'
+  - id: fan_test_prev_speed
+    type: float
+    initial_value: '20.0'
+  - id: fan_test_current_percent
+    type: float
+    initial_value: '0.0'
+  - id: fan_test_start_percent
+    type: float
+    initial_value: '-1.0'
+  - id: fan_test_min_rpm
+    type: float
+    initial_value: '0.0'
+  - id: fan_test_max_rpm
+    type: float
+    initial_value: '0.0'
+  - id: fan_test_max_rpm_percent
+    type: float
+    initial_value: '0.0'
 
 sensor:
   - platform: wifi_signal
@@ -102,6 +133,7 @@ sensor:
       number: GPIO47
       mode: INPUT_PULLUP
     name: "Puhaltimen nopeus"
+    id: fan_rpm
     unit_of_measurement: "RPM"
     update_interval: 5s
     filters:
@@ -111,6 +143,65 @@ sensor:
     web_server:
       sorting_group_id: sorting_group_runtime
       sorting_weight: 70
+
+  - platform: template
+    name: "Puhaltimen teho palaute"
+    id: fan_speed_feedback
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    lambda: |-
+      if (!id(huopa_fan).state) {
+        return 0.0f;
+      }
+      return id(huopa_fan).speed;
+    update_interval: 5s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 71
+
+  - platform: template
+    name: "Puhallintesti kaynnistysprosentti"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    lambda: |-
+      if (id(fan_test_start_percent) < 0.0f) {
+        return NAN;
+      }
+      return id(fan_test_start_percent);
+    update_interval: 5s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 72
+
+  - platform: template
+    name: "Puhallintesti min RPM"
+    unit_of_measurement: "RPM"
+    accuracy_decimals: 0
+    lambda: 'return id(fan_test_min_rpm);'
+    update_interval: 5s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 73
+
+  - platform: template
+    name: "Puhallintesti max RPM"
+    unit_of_measurement: "RPM"
+    accuracy_decimals: 0
+    lambda: 'return id(fan_test_max_rpm);'
+    update_interval: 5s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 74
+
+  - platform: template
+    name: "Puhallintesti max RPM teho"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    lambda: 'return id(fan_test_max_rpm_percent);'
+    update_interval: 5s
+    web_server:
+      sorting_group_id: sorting_group_runtime
+      sorting_weight: 75
 
   - platform: template
     name: "CO2 anturi 1"
@@ -214,6 +305,158 @@ switch:
           }
           id(co2_fail_cycles) = 0;
       - logger.log: "CO2-automaattiohjaus pois, kasiajo aktiivinen"
+
+  - platform: template
+    name: "Puhallin paalla"
+    id: fan_manual_power
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    icon: mdi:fan
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 18
+    turn_on_action:
+      - lambda: |-
+          if (!id(co2_auto_enabled).state) {
+            float min_spd = id(fan_speed_min).state;
+            id(fan_current_speed) = min_spd;
+            auto call = id(huopa_fan).make_call();
+            call.set_state(true);
+            call.set_speed((int) min_spd);
+            call.perform();
+            ESP_LOGI("fan", "Puhallin kaynnistetty miniminopeudella: %.0f%%", min_spd);
+          }
+    turn_off_action:
+      - lambda: |-
+          if (!id(co2_auto_enabled).state) {
+            id(fan_current_speed) = 0.0f;
+            auto call = id(huopa_fan).make_call();
+            call.set_state(false);
+            call.perform();
+            ESP_LOGI("fan", "Puhallin pysaytetty");
+          }
+
+  - platform: template
+    name: "Puhallintesti (5 min)"
+    id: fan_test_switch
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    web_server:
+      sorting_group_id: sorting_group_settings
+      sorting_weight: 17
+    turn_on_action:
+      - if:
+          condition:
+            lambda: 'return id(fan_test_running);'
+          then:
+            - logger.log: "Puhallintesti on jo kaynnissa"
+          else:
+            - script.execute: fan_test_script
+    turn_off_action:
+      - if:
+          condition:
+            lambda: 'return id(fan_test_running);'
+          then:
+            - script.stop: fan_test_script
+            - lambda: |-
+                id(fan_test_running) = false;
+                if (id(fan_test_prev_auto)) {
+                  id(co2_auto_enabled).turn_on();
+                } else {
+                  id(fan_current_speed) = id(fan_test_prev_speed);
+                  auto call = id(huopa_fan).make_call();
+                  call.set_state(id(fan_test_prev_fan_on));
+                  call.set_speed((int) id(fan_test_prev_speed));
+                  call.perform();
+                }
+            - logger.log: "Puhallintesti keskeytetty"
+
+script:
+  - id: fan_test_script
+    mode: restart
+    then:
+      - lambda: |-
+          id(fan_test_running) = true;
+          id(fan_test_prev_auto) = id(co2_auto_enabled).state;
+          id(fan_test_prev_fan_on) = id(huopa_fan).state;
+          id(fan_test_prev_speed) = id(huopa_fan).state ? id(huopa_fan).speed : 0.0f;
+          id(fan_test_current_percent) = 0.0f;
+          id(fan_test_start_percent) = -1.0f;
+          id(fan_test_min_rpm) = 0.0f;
+          id(fan_test_max_rpm) = 0.0f;
+          id(fan_test_max_rpm_percent) = 0.0f;
+      - if:
+          condition:
+            switch.is_on: co2_auto_enabled
+          then:
+            - switch.turn_off: co2_auto_enabled
+      - logger.log: "Puhallintesti aloitettu: 60 s nollateholla, sitten 1 prosentin askeleet 12 prosenttiin ja 5 prosentin askeleet sen yli"
+      - while:
+          condition:
+            lambda: 'return id(fan_test_current_percent) <= 100.0f;'
+          then:
+            - lambda: |-
+                auto call = id(huopa_fan).make_call();
+                call.set_state(true);
+                call.set_speed((int) id(fan_test_current_percent));
+                call.perform();
+                id(fan_current_speed) = id(fan_test_current_percent);
+                ESP_LOGI("fan_test", "Testiteho: %.0f%%", id(fan_test_current_percent));
+            - if:
+                condition:
+                  lambda: 'return id(fan_test_current_percent) == 0.0f;'
+                then:
+                  - delay: 60s
+                else:
+                  - if:
+                      condition:
+                        lambda: 'return id(fan_test_current_percent) <= 12.0f;'
+                      then:
+                        - delay: 20s
+                      else:
+                        - delay: 14s
+            - lambda: |-
+                const float rpm = id(fan_rpm).state;
+                const float pct = id(fan_test_current_percent);
+
+                if (rpm > 20.0f && id(fan_test_start_percent) < 0.0f) {
+                  id(fan_test_start_percent) = pct;
+                }
+
+                if (rpm > 20.0f) {
+                  if (id(fan_test_min_rpm) <= 0.0f || rpm < id(fan_test_min_rpm)) {
+                    id(fan_test_min_rpm) = rpm;
+                  }
+                }
+
+                if (rpm > id(fan_test_max_rpm)) {
+                  id(fan_test_max_rpm) = rpm;
+                  id(fan_test_max_rpm_percent) = pct;
+                }
+
+                if (id(fan_test_current_percent) < 12.0f) {
+                  id(fan_test_current_percent) += 1.0f;
+                } else {
+                  id(fan_test_current_percent) += 5.0f;
+                }
+      - lambda: |-
+          id(fan_test_running) = false;
+          if (id(fan_test_prev_auto)) {
+            id(co2_auto_enabled).turn_on();
+          } else {
+            id(fan_current_speed) = id(fan_test_prev_speed);
+            auto call = id(huopa_fan).make_call();
+            call.set_state(id(fan_test_prev_fan_on));
+            call.set_speed((int) id(fan_test_prev_speed));
+            call.perform();
+          }
+          if (id(fan_test_start_percent) > 0.0f) {
+            id(fan_speed_min).publish_state(id(fan_test_start_percent));
+            ESP_LOGI("fan_test", "Paivitetty fan_speed_min: %.0f%%", id(fan_test_start_percent));
+          }
+          ESP_LOGI("fan_test", "Valmis. Kaynnistys %.0f%% | min %.0f RPM | max %.0f RPM @ %.0f%%",
+            id(fan_test_start_percent), id(fan_test_min_rpm), id(fan_test_max_rpm), id(fan_test_max_rpm_percent));
+      - switch.turn_off: fan_test_switch
 
 number:
   - platform: template
@@ -368,12 +611,17 @@ number:
     set_action:
       - lambda: |-
           if (!id(co2_auto_enabled).state) {
-            id(fan_current_speed) = x;
+            // 0% slider = fan_speed_min, 100% slider = 100%
+            float min_spd = id(fan_speed_min).state;
+            float actual = min_spd + (x / 100.0f) * (100.0f - min_spd);
+            if (actual > 100.0f) actual = 100.0f;
+            id(fan_current_speed) = actual;
             auto call = id(huopa_fan).make_call();
             call.set_state(true);
-            call.set_speed((int) x);
+            call.set_speed((int) actual);
             call.perform();
-            ESP_LOGI("fan", "Kasinopeus asetettu: %.0f%%", x);
+            id(fan_manual_power).publish_state(true);
+            ESP_LOGI("fan", "Kasinopeus asetettu: %.0f%% (slider %.0f%%)", actual, x);
           } else {
             ESP_LOGW("fan", "Kasinopeus ei kaytossa kun CO2-automaattiohjaus on paalla");
           }
